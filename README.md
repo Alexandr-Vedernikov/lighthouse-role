@@ -30,4 +30,4 @@ MIT
 Author Information
 ------------------
 
-Vladislav Brattsev
+Vedernikov Alexandr

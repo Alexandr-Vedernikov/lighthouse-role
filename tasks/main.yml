@@ -50,3 +50,4 @@
     mode: 0644
   notify: reload-nginx
   tags: lighthouse
+

@@ -1,18 +1,55 @@
 ---
-- name: NGINX | Install epel-release
+- name: Add clickhouse addresses to /etc/hosts
+  become: true
+  lineinfile:
+    dest: /etc/hosts
+    regexp: '.*{{ item }}$'
+    line: "{{ hostvars[item].ansible_host }} {{item}}"
+    state: present
+  when: hostvars[item].ansible_host is defined
+  with_items: "{{ groups.clickhouse }}"
+#Устанавливаем доступ к репозиторию
+- name: Install epel-release package
   become: true
   ansible.builtin.yum:
     name: epel-release
     state: present
-  tags: nginx
-- name: NGINX | Install NGINX
+#Обновление списка пакетов
+- name: Update repositories
   become: true
   ansible.builtin.yum:
-    name: nginx
+    name: '*'
+    state: latest
+#Установка пакетов NGINX и unzip
+- name: Install Nginx and Unzip
+  become: true
+  ansible.builtin.yum:
+    name:
+      - nginx
+      - unzip
     state: present
-  notify: start-nginx
-  ignore_errors: "{{ ansible_check_mode }}"
-  tags: nginx
+#Получаем пакет из репозитория. Адрес репозитория (переменная - lighthouse_distrib) прописывается в переменных (group_vars/lighthouse/vars.yml)
+- name: Get lighthouse distrib
+  ansible.builtin.get_url:
+    url: "{{ lighthouse_distrib }}"
+    dest: ./lighthouse.zip
+#Создание директории для Lighthouse. Директория, где будет расположена Lighthouse (переменная - lighthouse_location_dir)
+#прописывается в переменных (group_vars/lighthouse/vars.yml)
+- name: Create directory
+  become: true
+  file:
+    path: "{{ lighthouse_location_dir }}"
+    state: directory
+    force: yes
+#Распаковка пакета Lighthouse. Директория, где будет расположена Lighthouse (переменная - lighthouse_location_dir)
+#прописывается в переменных (group_vars/lighthouse/vars.yml)
+- name: Unpack lighthouse archive
+  become: true
+  ansible.builtin.unarchive:
+    src: /home/centos/lighthouse.zip
+    dest: "{{ lighthouse_location_dir }}"
+    remote_src: yes
+# Создания файла конфигурации lighthouse
 - name: NGINX | Create file for lighthouse config
   become: true
   ansible.builtin.file:
@@ -20,34 +57,21 @@
     state: touch
     mode: 0644
   tags: nginx
-- name: NGINX | Create general config
-  become: true
-  template:
-    src: templates/nginx.conf.j2
-    dest: /etc/nginx/nginx.conf
-    mode: 0644
-  notify: reload-nginx
-  tags: nginx
-- name: Lighthouse | Install dependencies
-  become: true
-  ansible.builtin.yum:
-    name: git
-    state: present
-  tags: lighthouse
-- name: Lighthouse | Copy from git
-  become: true
-  git:
-    repo: "{{ lighthouse_vcs }}"
-    version: master
-    dest: "{{ lighthouse_location_dir }}"
-  ignore_errors: "{{ ansible_check_mode }}"
-  tags: lighthouse
+# Создания файла конфигурации lighthouse
 - name: Lighthouse | Create lighthouse config
   become: true
   template:
     src: lighthouse.conf.j2
     dest: /etc/nginx/conf.d/lighthouse.conf
     mode: 0644
-  notify: reload-nginx
   tags: lighthouse
-
+# Создания файла конфигурации nginx
+- name: NGINX | Create general config
+  become: true
+  template:
+    src: templates/nginx.conf.j2
+    dest: /etc/nginx/nginx.conf
+    mode: 0644
+  #Рестарт NGINX после правки конфигураций
+  notify: Start nginx service
+  tags: nginx
